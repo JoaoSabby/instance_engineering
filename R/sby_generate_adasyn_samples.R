@@ -176,13 +176,40 @@ sby_generate_adasyn_samples <- function(
     storage.mode(sby_minority_matrix)         <- "double"
     storage.mode(sby_minority_neighbor_index) <- "integer"
 
-    # Executa geracao sintetica ADASYN em codigo nativo
-    sby_synthetic_matrix <- .Call(
-      OU_GenerateSyntheticAdasynC,
-      sby_minority_matrix,
-      sby_minority_neighbor_index,
-      as.integer(sby_synthetic_per_row)
+    # Escolha de kernel ADASYN nativo.
+    #
+    # Default = "row": kernel original linha-a-linha (OU_GenerateSyntheticAdasynC).
+    # Vence em testes empiricos com p moderado (p <= 200) e n_synthetic moderado
+    # porque tem overhead minimo: nao pre-aloca vetores temporarios e gera +
+    # escreve cada sintetico em uma unica passada.
+    #
+    # Opcao "col": kernel column-friendly (OU_GenerateSyntheticAdasynColC), que
+    # pre-resolve (baseRow, nbrRow, weight) em vetores contiguos e percorre as
+    # colunas no laco externo. Em teoria favorece locality em dimensionalidade
+    # muito alta (p >> 200) e n_synthetic alto (> 10^5). Em casos pequenos a
+    # pre-alocacao adicional anula o ganho.
+    #
+    # Usuario pode forcar com:
+    #   options(instenginer.sby_adasyn_kernel = "col")
+    sby_adasyn_kernel <- getOption(
+      x = "instenginer.sby_adasyn_kernel",
+      default = "row"
     )
+    if(identical(sby_adasyn_kernel, "col")){
+      sby_synthetic_matrix <- .Call(
+        OU_GenerateSyntheticAdasynColC,
+        sby_minority_matrix,
+        sby_minority_neighbor_index,
+        as.integer(sby_synthetic_per_row)
+      )
+    }else{
+      sby_synthetic_matrix <- .Call(
+        OU_GenerateSyntheticAdasynC,
+        sby_minority_matrix,
+        sby_minority_neighbor_index,
+        as.integer(sby_synthetic_per_row)
+      )
+    }
 
     # Verifica se ha solicitacao de interrupcao apos geracao nativa
     sby_adanear_check_user_interrupt()
@@ -235,22 +262,32 @@ sby_generate_adasyn_samples <- function(
   # Preserva nomes de colunas na matriz sintetica
   colnames(sby_synthetic_matrix) <- colnames(sby_x_scaled)
 
-  # Retorna matriz expandida e alvo expandido com niveis preservados
+  # Retorna matriz expandida e alvo expandido com niveis preservados.
+  # Evita o ciclo factor -> character -> factor (que aloca vetores de strings
+  # do tamanho do conjunto inteiro): trabalhamos diretamente em codigos inteiros
+  # e reconstruimos o fator no final.
+  sby_minority_level_code <- match(
+    sby_class_roles$sby_minority_label,
+    levels(sby_target_factor)
+  )
+  sby_y_codes <- c(
+    unclass(sby_target_factor),
+    rep.int(sby_minority_level_code, sby_synthetic_count)
+  )
+  attributes(sby_y_codes) <- NULL
+  storage.mode(sby_y_codes) <- "integer"
+  sby_y_factor <- structure(
+    sby_y_codes,
+    levels = levels(sby_target_factor),
+    class = "factor"
+  )
+
   return(list(
     x = rbind(
       sby_x_scaled,
       sby_synthetic_matrix
     ),
-    y = factor(
-      x = c(
-        as.character(sby_target_factor),
-        rep.int(
-          x = sby_class_roles$sby_minority_label,
-          times = sby_synthetic_count
-        )
-      ),
-      levels = levels(sby_target_factor)
-    )
+    y = sby_y_factor
   ))
 }
 ####

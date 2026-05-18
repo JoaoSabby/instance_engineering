@@ -39,6 +39,14 @@ sby_adasyn_matrix <- function(
     sby_adanear_abort("'sby_y_vector' deve ter comprimento igual a nrow(sby_x_matrix)")
   }
   sby_class_info_input <- sby_binary_class_counts_fast(sby_y_vector)
+  # ADASYN exige ao menos duas observacoes na classe minoritaria para que
+  # exista uma vizinhanca minoritaria valida na interpolacao sintetica.
+  # A API tabular ja rejeita esse caso via sby_validate_sampling_inputs;
+  # aqui replicamos a validacao para fechar a brecha quando o chamador usa
+  # diretamente a API matricial.
+  if(sby_class_info_input$sby_minority_count < 2L){
+    sby_adanear_abort("'sby_y_vector' precisa de ao menos 2 observacoes na classe minoritaria para ADASYN")
+  }
 
   sby_validate_seed(sby_seed = sby_seed)
   sby_knn_over_k <- sby_validate_positive_integer_scalar(sby_knn_over_k, "sby_knn_over_k")
@@ -49,7 +57,13 @@ sby_adasyn_matrix <- function(
   sby_hnsw_params <- sby_validate_hnsw_params(sby_knn_hnsw_m, sby_knn_hnsw_ef)
   sby_knn_hnsw_m <- sby_hnsw_params$sby_knn_hnsw_m
   sby_knn_hnsw_ef <- sby_hnsw_params$sby_knn_hnsw_ef
-  sby_knn_engine <- sby_resolve_knn_engine(sby_knn_engine, sby_knn_workers)
+  sby_knn_engine <- sby_resolve_knn_engine(
+    sby_knn_engine = sby_knn_engine,
+    sby_knn_workers = sby_knn_workers,
+    sby_knn_distance_metric = sby_knn_distance_metric,
+    sby_row_count = nrow(sby_x_matrix),
+    sby_predictor_column_count = NCOL(sby_x_matrix)
+  )
   sby_knn_algorithm <- sby_resolve_knn_algorithm(sby_knn_algorithm, NCOL(sby_x_matrix), sby_knn_engine)
 
   sby_synthetic_count <- sby_compute_minority_expansion_count(sby_y_vector, sby_over_ratio)

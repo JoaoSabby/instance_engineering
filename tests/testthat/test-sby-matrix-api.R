@@ -228,7 +228,10 @@ test_that("native NearMiss selector matches R fallback without ties", {
   majority_index <- as.integer(c(10L, 20L, 30L, 40L))
   retained <- 2L
 
-  c_idx <- .Call("OU_SelectNearMissMajorityC", nn_dist, majority_index, as.integer(retained), PACKAGE = "instenginer")
+  # O pacote chama R_useDynamicSymbols(dll, FALSE) em R_init_instenginer, entao
+  # .Call por string + PACKAGE= e proibido. A forma correta usa o objeto de
+  # simbolo nativo gerado por useDynLib(.registration = TRUE) no namespace.
+  c_idx <- .Call(instenginer:::OU_SelectNearMissMajorityC, nn_dist, majority_index, as.integer(retained))
   r_idx <- majority_index[order(rowMeans(nn_dist), majority_index)[seq_len(retained)]]
 
   expect_equal(sort(c_idx), sort(r_idx))

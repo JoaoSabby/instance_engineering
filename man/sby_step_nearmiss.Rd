@@ -49,9 +49,6 @@ sby_step_nearmiss(
 \details{
 A função utiliza uma arquitetura KNN configurável sobre preditores numéricos padronizados por Z-score. Três escolhas trabalham em conjunto: \code{sby_knn_algorithm} define a estrutura/estratégia de busca, \code{sby_knn_engine} define a implementação computacional e \code{sby_knn_distance_metric} define a noção de proximidade.
 
-\subsection{Preciso informar \code{sby_knn_engine}?}{
-}
-
 \subsection{Engines disponíveis}{
 \describe{
 \item{\code{"FNN"}}{Melhor para bases pequenas a médias, distância euclidiana, execução sequencial ou paralela por blocos e busca exata. É simples, rápido para baixa/média dimensionalidade, determinístico e sem aproximação. Limitações: aceita apenas \code{"euclidean"} neste pacote e só combina com \code{"auto"}, \code{"kd_tree"}, \code{"cover_tree"} ou \code{"brute"}.}
@@ -81,9 +78,6 @@ As rotinas atuais operam sobre \code{matrix} numérica densa após seleção de 
 \item{\code{"cosine"}}{Distância angular; compara a orientação dos vetores e reduz a influência da norma após normalização L2. Compatível com \code{RcppHNSW}; não é aceita por \code{FNN}. Use quando o padrão relativo entre variáveis importa mais que o tamanho absoluto, como composições, assinaturas de perfil e vetores de alta dimensionalidade já materializados como matriz densa.}
 \item{\code{"ip"}}{Produto interno convertido em distância; após normalização L2, fica próximo de uma comparação por similaridade angular. Compatível somente com \code{RcppHNSW} neste pacote. Use quando o modelo conceitual é similaridade por produto interno ou quando você precisa alinhar a busca a embeddings/vetores normalizados; requer busca aproximada.}
 }
-}
-
-\subsection{Parâmetros exclusivos da rota HNSW}{
 }
 
 \subsection{Recomendações práticas}{
