@@ -27,13 +27,16 @@ sby_get_knnx <- function(
   sby_knn_workers,
   sby_knn_hnsw_m,
   sby_knn_hnsw_ef,
-  sby_knn_query_chunk_size = getOption("instenginer.sby_knn_query_chunk_size", 1000L),
+  sby_knn_query_chunk_size = 1000L,
   sby_query_is_data = FALSE,
   sby_knn_return = c("both", "index", "dist")
 ){
   
   # Verifica se ha solicitacao de interrupcao antes da consulta KNN
   sby_adanear_check_user_interrupt()
+
+  # Apply MKL/BLAS thread hints when enabled.
+  sby_configure_blas_threads(sby_workers = sby_knn_workers)
 
   # Resolve quais componentes KNN devem permanecer no objeto retornado
   sby_knn_return <- match.arg(sby_knn_return)
@@ -111,7 +114,7 @@ sby_get_knnx <- function(
     # FNN::get.knnx(algorithm="brute"), especialmente com OpenBLAS/MKL.
     sby_use_native_brute <- identical(sby_knn_algorithm, "brute") &&
       sby_adanear_native_available() &&
-      !isFALSE(getOption("instenginer.sby_use_native_brute", default = TRUE))
+      !identical(getOption("sbyadanear.perf_mode", "auto"), "legacy")
 
     if(sby_use_native_brute){
       sby_knn_result <- sby_query_knn_in_chunks(
@@ -210,10 +213,7 @@ sby_get_knnx <- function(
       # de chamadas nativas pequenas, que podem transformar execucoes de
       # minutos em horas em bases grandes.
       sby_hnsw_query_chunk_size <- sby_validate_knn_query_chunk_size(
-        sby_knn_query_chunk_size = getOption(
-          "instenginer.sby_hnsw_query_chunk_size",
-          sby_knn_query_chunk_size
-        )
+        sby_knn_query_chunk_size = sby_knn_query_chunk_size
       )
 
       # Consulta vizinhos HNSW em blocos interrompiveis
@@ -255,10 +255,7 @@ sby_get_knnx <- function(
     # grandes, retornar matrizes de vizinhos pelo pipe do processo filho pode
     # dominar o tempo de execucao; por isso o padrao privilegia desempenho e
     # mantem a interrupcao cooperativa entre blocos de consulta.
-    if(isTRUE(getOption(
-      x = "instenginer.sby_hnsw_interruptible_fork",
-      default = FALSE
-    ))){
+    if(FALSE){
       return(sby_run_interruptible_fork(
         sby_run_hnsw_query()
       ))

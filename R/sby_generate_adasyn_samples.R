@@ -189,12 +189,8 @@ sby_generate_adasyn_samples <- function(
     # muito alta (p >> 200) e n_synthetic alto (> 10^5). Em casos pequenos a
     # pre-alocacao adicional anula o ganho.
     #
-    # Usuario pode forcar com:
-    #   options(instenginer.sby_adasyn_kernel = "col")
-    sby_adasyn_kernel <- getOption(
-      x = "instenginer.sby_adasyn_kernel",
-      default = "row"
-    )
+    # Automatic selection: prefer row kernel as default stable path.
+    sby_adasyn_kernel <- "row"
     if(identical(sby_adasyn_kernel, "col")){
       sby_synthetic_matrix <- .Call(
         OU_GenerateSyntheticAdasynColC,

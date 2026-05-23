@@ -86,6 +86,36 @@ As rotinas atuais operam sobre \code{matrix} numérica densa após seleção de 
 }
 }
 
+
+\subsection{Configuração automática de desempenho (options e variáveis de ambiente)}{
+O pacote adota, por padrão, uma política automática para reduzir parametrizações manuais e selecionar caminhos de execução eficientes para KNN, BLAS e integração opcional com Intel oneAPI MKL.
+
+\describe{
+\item{\code{options(sbyadanear.perf_mode = "auto")}}{Modo padrão. Habilita decisões automáticas de desempenho, incluindo uso de caminho nativo bruto quando compatível, heurísticas internas de engine/algoritmo e política automática de threads BLAS.}
+\item{\code{options(sbyadanear.perf_mode = "manual")}}{Desativa a ativação automática de MKL no resolvedor interno, preservando execução funcional com foco em previsibilidade operacional.}
+\item{\code{options(sbyadanear.perf_mode = "legacy")}}{Mantém comportamento de compatibilidade para cenários de transição, inclusive desabilitando o fast-path nativo bruto no gate de performance interno.}
+}
+
+Variáveis de ambiente consideradas:
+\describe{
+\item{\code{MKLROOT}}{Quando definida, sinaliza presença de runtime Intel MKL no ambiente. No modo automático, essa informação pode habilitar políticas internas de threading BLAS/MKL.}
+\item{\code{ONEAPI_ROOT}}{Alternativa para detecção de runtime oneAPI. Quando presente, também sinaliza disponibilidade potencial de MKL no modo automático.}
+}
+
+Variáveis de ambiente ajustadas internamente em runtime (quando aplicável):
+\describe{
+\item{\code{MKL_NUM_THREADS}}{Definida automaticamente para reduzir oversubscription. Em execução com múltiplos workers R, tende a ser fixada em 1 thread BLAS por worker.}
+\item{\code{OMP_NUM_THREADS}}{Definida em conjunto com \code{MKL_NUM_THREADS}, mantendo coerência de paralelismo entre backends BLAS/OpenMP no processo atual.}
+}
+
+Observações práticas:
+\itemize{
+\item A configuração automática prioriza desempenho com estabilidade operacional, evitando múltiplas opções avançadas para uso cotidiano.
+\item Para cargas com forte paralelismo em nível R (\code{sby_knn_workers > 1L}), a redução de threads BLAS por processo evita competição excessiva por CPU.
+\item Em ambientes sem MKL/oneAPI detectável, o pacote permanece funcional com os backends disponíveis na instalação.
+}
+}
+
 \subsection{Recomendações práticas}{
 \itemize{
 \item Comece com \code{sby_knn_engine = "auto"}, \code{sby_knn_algorithm = "auto"} e \code{sby_knn_distance_metric = "euclidean"}.

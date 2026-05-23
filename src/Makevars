@@ -1,0 +1,11 @@
+PKG_CPPFLAGS += -DSBYADANEAR_ONEAPI_MKL_OPTIONAL=1
+
+ifeq ($(SBY_USE_ONEAPI_MKL),1)
+  ifneq ($(ONEAPI_ROOT),)
+    MKLROOT ?= $(ONEAPI_ROOT)/mkl/latest
+  endif
+  ifneq ($(MKLROOT),)
+    PKG_CPPFLAGS += -I$(MKLROOT)/include -DSBYADANEAR_ONEAPI_MKL=1
+    PKG_LIBS += -L$(MKLROOT)/lib/intel64 -Wl,--no-as-needed -lmkl_rt -lpthread -lm -ldl
+  endif
+endif

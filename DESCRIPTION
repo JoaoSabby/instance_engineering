@@ -1,7 +1,7 @@
 Package: instenginer
 Type: Package
 Title: High-Performance to Instance Engineering  
-Version: 0.4.0
+Version: 0.3.0
 Authors@R: 
     person(given = "João Batista", family = "Gonçalves de Brito", role = c("aut", "cre"), comment = "https://orcid.org/0000-0002-4645-5217", email = "joao@sabby.com.br")
 Description: Provides high-performance binary over- and under-sampling routines
@@ -9,8 +9,8 @@ Description: Provides high-performance binary over- and under-sampling routines
     optional native C kernels, Rfast fallbacks, and configurable nearest-neighbor
     backends for exact or approximate searches.
 License: MIT + file LICENSE
-URL: https://github.com/JoaoSabby/instenginer
-BugReports: https://github.com/JoaoSabby/instenginer/issues
+URL: https://github.com/JoaoSabby/sbyadanear
+BugReports: https://github.com/JoaoSabby/sbyadanear/issues
 Encoding: UTF-8
 Language: pt-BR
 NeedsCompilation: yes
@@ -35,3 +35,5 @@ Suggests:
     Rfast,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
+
+SystemRequirements: Optional Intel oneAPI MKL (BLAS backend), OpenMP (optional)
