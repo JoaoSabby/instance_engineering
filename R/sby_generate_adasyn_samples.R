@@ -27,7 +27,8 @@ sby_generate_adasyn_samples <- function(
   sby_knn_distance_metric,
   sby_knn_workers,
   sby_knn_hnsw_m,
-  sby_knn_hnsw_ef
+  sby_knn_hnsw_ef,
+  sby_knn_query_chunk_size
 ){
   
   # Identifica papeis de classe para localizar a minoria
@@ -56,6 +57,7 @@ sby_generate_adasyn_samples <- function(
     sby_knn_workers             = sby_knn_workers,
     sby_knn_hnsw_m                  = sby_knn_hnsw_m,
     sby_knn_hnsw_ef                 = sby_knn_hnsw_ef,
+    sby_knn_query_chunk_size      = sby_knn_query_chunk_size,
     sby_knn_return                = "index"
   )
 
@@ -144,6 +146,7 @@ sby_generate_adasyn_samples <- function(
     sby_knn_workers             = sby_knn_workers,
     sby_knn_hnsw_m                  = sby_knn_hnsw_m,
     sby_knn_hnsw_ef                 = sby_knn_hnsw_ef,
+    sby_knn_query_chunk_size      = sby_knn_query_chunk_size,
     sby_query_is_data           = TRUE,
     sby_knn_return                = "index"
   )

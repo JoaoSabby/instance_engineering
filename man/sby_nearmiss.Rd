@@ -32,7 +32,8 @@ sby_nearmiss(
   ),
   sby_knn_workers = 1L,
   sby_knn_hnsw_m = 16L,
-  sby_knn_hnsw_ef = 200L
+  sby_knn_hnsw_ef = 200L,
+  sby_knn_query_chunk_size = 1000L
 )
 
 }
@@ -55,6 +56,7 @@ sby_nearmiss(
 \item{sby_knn_workers}{Número inteiro positivo de workers usados nas consultas KNN. O padrão é \code{1L}. Mais workers podem reduzir latência em bases grandes, mas aumentam consumo de CPU e podem exigir engines compatíveis com execução paralela.}
 \item{sby_knn_hnsw_m}{Número inteiro positivo usado apenas quando o engine efetivo é \code{"RcppHNSW"}. Controla a conectividade máxima do grafo (\code{M}): valores maiores aumentam a chance de recuperar vizinhos melhores e tornam o índice mais robusto, mas consomem mais memória e tempo de construção. O padrão \code{16L} costuma ser um bom equilíbrio; aumente em bases grandes, ruidosas ou de alta dimensionalidade quando recall for mais importante que memória.}
 \item{sby_knn_hnsw_ef}{Número inteiro positivo usado apenas quando o engine efetivo é \code{"RcppHNSW"}. Controla a largura da lista dinâmica de candidatos (\code{ef}) durante construção/consulta: valores maiores aproximam a busca do resultado exato e estabilizam ADASYN/NearMiss, mas deixam as consultas mais lentas. O padrão \code{200L} prioriza qualidade; reduza para velocidade ou aumente quando a vizinhança aproximada precisar de mais fidelidade.}
+\item{sby_knn_query_chunk_size}{Número inteiro positivo que define quantas linhas de consulta KNN são processadas por bloco. O padrão é \code{1000L}. Valores maiores reduzem overhead de chamadas e podem favorecer kernels BLAS/MKL em matrizes densas, enquanto valores menores reduzem pico de memória em bases muito grandes.}
 }
 \value{Tibble balanceado quando \code{sby_audit = FALSE}; lista de auditoria com dados balanceados, índices, diagnósticos e escala quando \code{sby_audit = TRUE}.}
 \details{
@@ -80,6 +82,8 @@ A função utiliza uma arquitetura KNN configurável sobre preditores numéricos
 A velocidade deve ser interpretada como um atributo de qualidade da configuração KNN, junto com fidelidade da vizinhança, consumo de memória e compatibilidade de métrica. Em termos práticos:
 \describe{
 \item{Paralelismo (\code{sby_knn_workers > 1L})}{Pode reduzir tempo de consulta em matrizes grandes, com maior uso simultâneo de CPU e possível pressão adicional de memória. O trabalho é dividido entre workers em \code{FNN} por blocos de consulta exatos e em \code{RcppHNSW} pelos threads nativos.}
+
+Na rota exata \code{FNN} com \code{sby_knn_algorithm = "brute"}, quando os kernels nativos estão disponíveis, o pacote usa produtos matriciais BLAS para calcular top-k sem materializar uma matriz completa de distâncias. As chamadas internas retornam apenas índices ou apenas distâncias quando a etapa precisa de um único componente, reduzindo alocações em ADASYN e NearMiss.
 }
 As rotinas atuais operam sobre \code{matrix} numérica densa após seleção de preditores e padronização. Matrizes esparsas do pacote \code{Matrix} são rejeitadas antes de densificação implícita para evitar estouro de memória. Portanto, em dados muito esparsos, materialize conscientemente uma matriz densa somente se houver memória suficiente, reduza dimensionalidade/seleção de variáveis antes do balanceamento, ou use outro pré-processamento que produza preditores densos. Em matrizes densas muito largas, prefira testar uma busca aproximada ou uma busca exaustiva paralelizável, pois árvores exatas tendem a perder vantagem.
 }

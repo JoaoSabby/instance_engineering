@@ -1,5 +1,7 @@
 #' Balancear matrix double e factor binario por estrategia industrial
 #'
+#' @param sby_knn_query_chunk_size Número inteiro positivo que define quantas linhas de consulta KNN são processadas por bloco. O padrão é `1000L`; ajuste para equilibrar overhead de chamadas e pico de memória.
+#'
 #' @return Lista leve com matrix, alvo, razoes de classe e diagnosticos.
 #' @export
 sby_balance_matrix <- function(
@@ -22,6 +24,7 @@ sby_balance_matrix <- function(
   sby_knn_workers = 1L,
   sby_knn_hnsw_m = 16L,
   sby_knn_hnsw_ef = 200L,
+  sby_knn_query_chunk_size = 1000L,
   sby_memory_guard = TRUE,
   sby_max_output_rows = Inf,
   sby_max_dense_gb = Inf
@@ -72,6 +75,7 @@ sby_balance_matrix <- function(
       sby_knn_workers = sby_knn_workers,
       sby_knn_hnsw_m = sby_knn_hnsw_m,
       sby_knn_hnsw_ef = sby_knn_hnsw_ef,
+      sby_knn_query_chunk_size = sby_knn_query_chunk_size,
       sby_memory_guard = sby_memory_guard,
       sby_max_output_rows = sby_max_output_rows,
       sby_max_dense_gb = sby_max_dense_gb
@@ -96,6 +100,7 @@ sby_balance_matrix <- function(
       sby_knn_workers = sby_knn_workers,
       sby_knn_hnsw_m = sby_knn_hnsw_m,
       sby_knn_hnsw_ef = sby_knn_hnsw_ef,
+      sby_knn_query_chunk_size = sby_knn_query_chunk_size,
       sby_memory_guard = sby_memory_guard
     ))
   }
@@ -118,6 +123,7 @@ sby_balance_matrix <- function(
     sby_knn_workers = sby_knn_workers,
     sby_knn_hnsw_m = sby_knn_hnsw_m,
     sby_knn_hnsw_ef = sby_knn_hnsw_ef,
+    sby_knn_query_chunk_size = sby_knn_query_chunk_size,
     sby_memory_guard = sby_memory_guard,
     sby_max_output_rows = sby_max_output_rows,
     sby_max_dense_gb = sby_max_dense_gb

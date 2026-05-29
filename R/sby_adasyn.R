@@ -44,6 +44,7 @@
 #' @param sby_knn_distance_metric String escalar que define a geometria da vizinhança: `"euclidean"`, `"cosine"` ou `"ip"`. A escolha muda o significado de proximidade e também restringe engines e algoritmos disponíveis; `"euclidean"` é a opção mais geral, `"cosine"` privilegia direção angular e `"ip"` usa produto interno via `RcppHNSW`. Consulte os detalhes para recomendações.
 #' @param sby_knn_workers Número inteiro positivo de workers disponibilizados para consultas KNN. O padrão é `1L`. Aumentar o valor pode acelerar consultas KNN em matrizes grandes, mas eleva uso de CPU e pode acelerar a rota exata do FNN por blocos ou a rota HNSW nativa.
 #' @param sby_knn_hnsw_m Número inteiro positivo usado apenas quando o engine efetivo é `"RcppHNSW"`. Controla a conectividade máxima do grafo (`M`): valores maiores aumentam a chance de recuperar vizinhos melhores e tornam o índice mais robusto, mas consomem mais memória e tempo de construção. O padrão `16L` costuma ser um bom equilíbrio; aumente em bases grandes, ruidosas ou de alta dimensionalidade quando recall for mais importante que memória.
+#' @param sby_knn_query_chunk_size Número inteiro positivo que define quantas linhas de consulta KNN são processadas por bloco. O padrão é `1000L`. Valores maiores reduzem overhead de chamadas e podem favorecer kernels BLAS/MKL em matrizes densas, enquanto valores menores reduzem pico de memória em bases muito grandes.
 #' @param sby_knn_hnsw_ef Número inteiro positivo usado apenas quando o engine efetivo é `"RcppHNSW"`. Controla a largura da lista dinâmica de candidatos (`ef`) durante construção/consulta: valores maiores aproximam a busca do resultado exato e estabilizam ADASYN/NearMiss, mas deixam as consultas mais lentas. O padrão `200L` prioriza qualidade; reduza para velocidade ou aumente quando a vizinhança aproximada precisar de mais fidelidade.
 #'
 #' @details
@@ -86,6 +87,12 @@
 #' |---|---|---|---|
 #' | Paralelismo (`sby_knn_workers > 1L`) | Pode reduzir tempo de consulta em matrizes grandes. | Aumenta uso simultâneo de CPU e pode elevar pressão de memória. | O trabalho é dividido entre workers em `FNN` por blocos de consulta exatos e em `RcppHNSW` pelos threads nativos. |
 #'
+#' Na rota exata `FNN` com `sby_knn_algorithm = "brute"`, quando os
+#' kernels nativos estão disponíveis, o pacote usa produtos matriciais BLAS para
+#' calcular top-k sem materializar uma matriz completa de distâncias. As chamadas
+#' internas retornam apenas índices ou apenas distâncias quando a etapa precisa
+#' de um único componente, reduzindo alocações em ADASYN e NearMiss.
+#'
 #' As rotinas atuais operam sobre `matrix` numérica densa após seleção de
 #' preditores e padronização. Matrizes esparsas do pacote `Matrix` são rejeitadas
 #' antes de densificação implícita para evitar estouro de memória. Portanto, em
@@ -103,7 +110,7 @@
 #' | `"ip"` | Produto interno convertido em distância; após normalização L2, fica próximo de uma comparação por similaridade angular. | Somente `RcppHNSW` neste pacote. | Use quando o modelo conceitual é similaridade por produto interno ou quando você precisa alinhar a busca a embeddings/vetores normalizados; requer busca aproximada. |
 #'
 #' Os argumentos `sby_knn_hnsw_m` e `sby_knn_hnsw_ef` só afetam a rota
-#' `sby_knn_engine = "RcppHNSW"`; eles não configuram o `"Hnsw"` de
+#' `sby_knn_engine = "RcppHNSW"`. O parâmetro `sby_knn_hnsw_m`
 #' representa a conectividade máxima do grafo: valores maiores criam mais arestas,
 #' melhoram o recall e tornam a busca mais robusta, mas aumentam memória e tempo
 #' de construção. O padrão `16L` é conservador; valores como 24 ou 32 podem ser
@@ -152,7 +159,8 @@ sby_adasyn <- function(
   sby_knn_distance_metric = c("euclidean", "ip", "cosine"),
   sby_knn_workers = 1L,
   sby_knn_hnsw_m = 16L,
-  sby_knn_hnsw_ef = 200L
+  sby_knn_hnsw_ef = 200L,
+  sby_knn_query_chunk_size = 1000L
 ){
   sby_adanear_check_user_interrupt()
 
@@ -185,7 +193,8 @@ sby_adasyn <- function(
     sby_knn_distance_metric = sby_knn_distance_metric,
     sby_knn_workers = sby_knn_workers,
     sby_knn_hnsw_m = sby_knn_hnsw_m,
-    sby_knn_hnsw_ef = sby_knn_hnsw_ef
+    sby_knn_hnsw_ef = sby_knn_hnsw_ef,
+    sby_knn_query_chunk_size = sby_knn_query_chunk_size
   )
 
   sby_final_predictors <- sby_build_preserved_predictors(

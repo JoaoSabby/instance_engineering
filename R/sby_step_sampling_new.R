@@ -29,6 +29,7 @@ sby_step_sampling_new <- function(
   sby_knn_workers,
   sby_knn_hnsw_m,
   sby_knn_hnsw_ef,
+  sby_knn_query_chunk_size,
   sby_skip,
   sby_id
 ){
@@ -59,6 +60,7 @@ sby_step_sampling_new <- function(
     sby_knn_workers             = sby_knn_workers,
     sby_knn_hnsw_m              = sby_knn_hnsw_m,
     sby_knn_hnsw_ef             = sby_knn_hnsw_ef,
+    sby_knn_query_chunk_size  = sby_knn_query_chunk_size,
     sby_skip                    = sby_skip,
     sby_id                      = sby_id
   ))

@@ -13,7 +13,7 @@ sby_balance_matrix(sby_x_matrix, sby_y_vector,
   sby_knn_engine = c("auto", "FNN", "RcppHNSW"),
   sby_knn_distance_metric = c("euclidean", "ip", "cosine"),
   sby_knn_workers = 1L, sby_knn_hnsw_m = 16L,
-  sby_knn_hnsw_ef = 200L, sby_memory_guard = TRUE,
+  sby_knn_hnsw_ef = 200L, sby_knn_query_chunk_size = 1000L, sby_memory_guard = TRUE,
   sby_max_output_rows = Inf, sby_max_dense_gb = Inf)
 }
 \arguments{
@@ -25,7 +25,7 @@ sby_balance_matrix(sby_x_matrix, sby_y_vector,
 \item{sby_seed}{Semente reprodutível.}
 \item{sby_audit, sby_audit_level}{Auditoria none/light/full.}
 \item{sby_return_index, sby_return_scaled, sby_return_original_scale}{Componentes e escala retornados.}
-\item{sby_knn_algorithm, sby_knn_engine, sby_knn_distance_metric, sby_knn_workers, sby_knn_hnsw_m, sby_knn_hnsw_ef}{Configuração KNN.}
+\item{sby_knn_algorithm, sby_knn_engine, sby_knn_distance_metric, sby_knn_workers, sby_knn_hnsw_m, sby_knn_hnsw_ef, sby_knn_query_chunk_size}{Configuração KNN.}
 \item{sby_memory_guard, sby_max_output_rows, sby_max_dense_gb}{Controles de memória.}
 }
 \description{Seleciona a estratégia de balanceamento adequada para pipelines industriais.}

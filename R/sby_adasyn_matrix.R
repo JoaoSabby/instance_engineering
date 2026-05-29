@@ -1,5 +1,7 @@
 #' Aplicar ADASYN diretamente sobre matrix double e factor binario
 #'
+#' @param sby_knn_query_chunk_size Número inteiro positivo que define quantas linhas de consulta KNN são processadas por bloco. O padrão é `1000L`; ajuste para equilibrar overhead de chamadas e pico de memória.
+#'
 #' @return Lista leve com `sby_x_matrix`, `sby_y_vector`, razoes, distribuicoes e diagnosticos.
 #' @export
 sby_adasyn_matrix <- function(
@@ -20,6 +22,7 @@ sby_adasyn_matrix <- function(
   sby_knn_workers = 1L,
   sby_knn_hnsw_m = 16L,
   sby_knn_hnsw_ef = 200L,
+  sby_knn_query_chunk_size = 1000L,
   sby_memory_guard = TRUE,
   sby_max_output_rows = Inf,
   sby_max_dense_gb = Inf
@@ -54,9 +57,15 @@ sby_adasyn_matrix <- function(
   sby_knn_engine <- match.arg(sby_knn_engine)
   sby_knn_distance_metric <- match.arg(sby_knn_distance_metric)
   sby_knn_workers <- sby_validate_knn_workers(sby_knn_workers)
-  sby_hnsw_params <- sby_validate_hnsw_params(sby_knn_hnsw_m, sby_knn_hnsw_ef)
+  sby_hnsw_params <- sby_validate_hnsw_params(
+    sby_knn_hnsw_m = sby_knn_hnsw_m,
+    sby_knn_hnsw_ef = sby_knn_hnsw_ef
+  )
   sby_knn_hnsw_m <- sby_hnsw_params$sby_knn_hnsw_m
   sby_knn_hnsw_ef <- sby_hnsw_params$sby_knn_hnsw_ef
+  sby_knn_query_chunk_size <- sby_validate_knn_query_chunk_size(
+    sby_knn_query_chunk_size = sby_knn_query_chunk_size
+  )
   sby_knn_engine <- sby_resolve_knn_engine(
     sby_knn_engine = sby_knn_engine,
     sby_knn_workers = sby_knn_workers,
@@ -101,7 +110,8 @@ sby_adasyn_matrix <- function(
     sby_knn_distance_metric = sby_knn_distance_metric,
     sby_knn_workers = sby_knn_workers,
     sby_knn_hnsw_m = sby_knn_hnsw_m,
-    sby_knn_hnsw_ef = sby_knn_hnsw_ef
+    sby_knn_hnsw_ef = sby_knn_hnsw_ef,
+    sby_knn_query_chunk_size = sby_knn_query_chunk_size
   )
   colnames(sby_adasyn_result$x) <- colnames(sby_x_matrix)
 
@@ -125,6 +135,7 @@ sby_adasyn_matrix <- function(
     sby_knn_algorithm = sby_knn_algorithm,
     sby_knn_distance_metric = sby_knn_distance_metric,
     sby_knn_workers = sby_knn_workers,
+    sby_knn_query_chunk_size = sby_knn_query_chunk_size,
     sby_minority_label = sby_class_info_input$sby_minority_label,
     sby_majority_label = sby_class_info_input$sby_majority_label
   )

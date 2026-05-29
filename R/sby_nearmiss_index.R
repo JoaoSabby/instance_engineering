@@ -18,6 +18,7 @@ sby_nearmiss_index <- function(
   sby_knn_workers = 1L,
   sby_knn_hnsw_m = 16L,
   sby_knn_hnsw_ef = 200L,
+  sby_knn_query_chunk_size = 1000L,
   sby_audit = FALSE,
   sby_audit_level = c("none", "light", "full"),
   sby_return_scaling_info = FALSE,
@@ -48,9 +49,15 @@ sby_nearmiss_index <- function(
   sby_knn_engine <- match.arg(sby_knn_engine)
   sby_knn_distance_metric <- match.arg(sby_knn_distance_metric)
   sby_knn_workers <- sby_validate_knn_workers(sby_knn_workers)
-  sby_hnsw_params <- sby_validate_hnsw_params(sby_knn_hnsw_m, sby_knn_hnsw_ef)
+  sby_hnsw_params <- sby_validate_hnsw_params(
+    sby_knn_hnsw_m = sby_knn_hnsw_m,
+    sby_knn_hnsw_ef = sby_knn_hnsw_ef
+  )
   sby_knn_hnsw_m <- sby_hnsw_params$sby_knn_hnsw_m
   sby_knn_hnsw_ef <- sby_hnsw_params$sby_knn_hnsw_ef
+  sby_knn_query_chunk_size <- sby_validate_knn_query_chunk_size(
+    sby_knn_query_chunk_size = sby_knn_query_chunk_size
+  )
   sby_knn_engine <- sby_resolve_knn_engine(
     sby_knn_engine = sby_knn_engine,
     sby_knn_workers = sby_knn_workers,
@@ -100,31 +107,63 @@ sby_nearmiss_index <- function(
       sby_adanear_abort("Sem linhas minoritarias suficientes para NearMiss")
     }
 
-    set.seed(sby_seed)
-    sby_knn_result <- sby_get_knnx(
-      sby_data = sby_minority_matrix,
-      sby_query = sby_majority_matrix,
-      sby_k = sby_effective_k,
-      sby_knn_algorithm = sby_knn_algorithm,
-      sby_knn_engine = sby_knn_engine,
-      sby_knn_distance_metric = sby_knn_distance_metric,
-      sby_knn_workers = sby_knn_workers,
-      sby_knn_hnsw_m = sby_knn_hnsw_m,
-      sby_knn_hnsw_ef = sby_knn_hnsw_ef,
-      sby_knn_return = "dist"
-    )
-
-    if(sby_adanear_native_available()){
-      sby_selected_majority_index <- .Call(
-        OU_SelectNearMissMajorityC,
-        sby_knn_result$nn.dist,
-        as.integer(sby_majority_index),
-        as.integer(sby_retained_majority_count)
-      )
+    if(sby_retained_majority_count >= length(sby_majority_index)){
+      # Quando a razao solicitada permite manter toda a maioria, a consulta KNN
+      # nao altera o resultado. Esse atalho preserva a exatidao e evita custo
+      # quadratico desnecessario em bases ja proximas do alvo de balanceamento.
+      sby_selected_majority_index <- sby_majority_index
     }else{
-      sby_mean_distances <- rowMeans(sby_knn_result$nn.dist)
-      sby_selected_order <- order(sby_mean_distances, decreasing = FALSE)
-      sby_selected_majority_index <- sby_majority_index[sby_selected_order[seq_len(sby_retained_majority_count)]]
+      set.seed(sby_seed)
+
+      # Rota NearMiss-1 exata fundida: para busca brute force euclidiana, o
+      # kernel nativo calcula as medias dos k vizinhos minoritarios via BLAS e
+      # seleciona os indices majoritarios sem materializar nn.dist em R.
+      sby_use_native_nearmiss <- identical(sby_knn_engine, "FNN") &&
+        identical(sby_knn_algorithm, "brute") &&
+        identical(sby_knn_distance_metric, "euclidean") &&
+        isTRUE(getOption("sbyadanear.sby_use_native_brute", TRUE)) &&
+        sby_adanear_native_available() &&
+        !identical(getOption("sbyadanear.perf_mode", "auto"), "legacy")
+
+      if(sby_use_native_nearmiss){
+        storage.mode(sby_minority_matrix) <- "double"
+        storage.mode(sby_majority_matrix) <- "double"
+        sby_selected_majority_index <- .Call(
+          OU_NearMissBruteSelectC,
+          sby_minority_matrix,
+          sby_majority_matrix,
+          as.integer(sby_majority_index),
+          as.integer(sby_effective_k),
+          as.integer(sby_retained_majority_count)
+        )
+      }else{
+        sby_knn_result <- sby_get_knnx(
+          sby_data = sby_minority_matrix,
+          sby_query = sby_majority_matrix,
+          sby_k = sby_effective_k,
+          sby_knn_algorithm = sby_knn_algorithm,
+          sby_knn_engine = sby_knn_engine,
+          sby_knn_distance_metric = sby_knn_distance_metric,
+          sby_knn_workers = sby_knn_workers,
+          sby_knn_hnsw_m = sby_knn_hnsw_m,
+          sby_knn_hnsw_ef = sby_knn_hnsw_ef,
+          sby_knn_query_chunk_size = sby_knn_query_chunk_size,
+          sby_knn_return = "dist"
+        )
+
+        if(sby_adanear_native_available()){
+          sby_selected_majority_index <- .Call(
+            OU_SelectNearMissMajorityC,
+            sby_knn_result$nn.dist,
+            as.integer(sby_majority_index),
+            as.integer(sby_retained_majority_count)
+          )
+        }else{
+          sby_mean_distances <- rowMeans(sby_knn_result$nn.dist)
+          sby_selected_order <- order(sby_mean_distances, decreasing = FALSE)
+          sby_selected_majority_index <- sby_majority_index[sby_selected_order[seq_len(sby_retained_majority_count)]]
+        }
+      }
     }
     sby_retained_index <- sort(c(sby_minority_index, sby_selected_majority_index))
   }
@@ -139,7 +178,8 @@ sby_nearmiss_index <- function(
     sby_knn_engine = sby_knn_engine,
     sby_knn_algorithm = sby_knn_algorithm,
     sby_knn_distance_metric = sby_knn_distance_metric,
-    sby_knn_workers = sby_knn_workers
+    sby_knn_workers = sby_knn_workers,
+    sby_knn_query_chunk_size = sby_knn_query_chunk_size
   )
 
   sby_result <- list(

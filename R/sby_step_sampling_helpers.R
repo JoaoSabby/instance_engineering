@@ -68,6 +68,7 @@ sby_prep_step_sampling <- function(x, training, info, sby_step_name){
     sby_knn_workers             = sby_x$sby_knn_workers,
     sby_knn_hnsw_m              = sby_x$sby_knn_hnsw_m,
     sby_knn_hnsw_ef             = sby_x$sby_knn_hnsw_ef,
+    sby_knn_query_chunk_size  = sby_x$sby_knn_query_chunk_size,
     sby_skip                    = sby_x$sby_skip,
     sby_id                      = sby_x$sby_id
   ))
@@ -156,7 +157,8 @@ sby_bake_step_sampling <- function(object, new_data, sby_step_name){
       sby_knn_distance_metric = sby_object$sby_knn_distance_metric,
       sby_knn_workers         = sby_object$sby_knn_workers,
       sby_knn_hnsw_m          = sby_object$sby_knn_hnsw_m,
-      sby_knn_hnsw_ef         = sby_object$sby_knn_hnsw_ef
+      sby_knn_hnsw_ef         = sby_object$sby_knn_hnsw_ef,
+      sby_knn_query_chunk_size  = sby_object$sby_knn_query_chunk_size
     )
   }else if(identical(sby_object$sby_sampling_method, "nearmiss")){
 
@@ -174,7 +176,8 @@ sby_bake_step_sampling <- function(object, new_data, sby_step_name){
       sby_knn_distance_metric = sby_object$sby_knn_distance_metric,
       sby_knn_workers         = sby_object$sby_knn_workers,
       sby_knn_hnsw_m          = sby_object$sby_knn_hnsw_m,
-      sby_knn_hnsw_ef         = sby_object$sby_knn_hnsw_ef
+      sby_knn_hnsw_ef         = sby_object$sby_knn_hnsw_ef,
+      sby_knn_query_chunk_size  = sby_object$sby_knn_query_chunk_size
     )
   }else{
 
@@ -194,7 +197,8 @@ sby_bake_step_sampling <- function(object, new_data, sby_step_name){
       sby_knn_distance_metric = sby_object$sby_knn_distance_metric,
       sby_knn_workers         = sby_object$sby_knn_workers,
       sby_knn_hnsw_m          = sby_object$sby_knn_hnsw_m,
-      sby_knn_hnsw_ef         = sby_object$sby_knn_hnsw_ef
+      sby_knn_hnsw_ef         = sby_object$sby_knn_hnsw_ef,
+      sby_knn_query_chunk_size  = sby_object$sby_knn_query_chunk_size
     )
   }
 
@@ -240,6 +244,7 @@ sby_tidy_step_sampling <- function(x){
     sby_under_ratio         = sby_x$sby_under_ratio,
     sby_knn_over_k          = sby_x$sby_knn_over_k,
     sby_knn_under_k         = sby_x$sby_knn_under_k,
+    sby_knn_query_chunk_size  = sby_x$sby_knn_query_chunk_size,
     sby_audit               = sby_x$sby_audit,
     sby_id                  = sby_x$sby_id,
     stringsAsFactors        = FALSE

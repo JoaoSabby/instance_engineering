@@ -58,6 +58,10 @@ As rotinas usam KNN para estimar vizinhanças locais. Os principais controles s�
   threads nativos do índice aproximado.
 - `sby_knn_hnsw_m` e `sby_knn_hnsw_ef`: parâmetros do HNSW quando
   `sby_knn_engine = "RcppHNSW"`.
+- `sby_knn_query_chunk_size`: quantidade de linhas de consulta processadas por
+  bloco nas rotas KNN. O padrão `1000L` equilibra overhead de chamadas e pico
+  de memória; valores maiores podem favorecer BLAS/MKL em matrizes densas,
+  enquanto valores menores reduzem pressão de memória.
 
 Resumo de compatibilidade:
 
@@ -67,21 +71,56 @@ Resumo de compatibilidade:
 | `RcppHNSW` | Aproximada por HNSW | `euclidean`, `cosine`, `ip` |
 
 Consultas KNN longas são executadas em blocos para permitir interrupção por
-`Ctrl + C`. Ajuste os blocos com:
+`Ctrl + C` entre blocos e para controlar o pico de memória. Ajuste esse
+comportamento diretamente na chamada:
 
 ```r
-options(sbyadanear.sby_knn_query_chunk_size = 1000L)
-options(sbyadanear.sby_hnsw_query_chunk_size = 100L)
+sby_adanear(
+  sby_formula = alvo ~ .,
+  sby_data = dados,
+  sby_knn_query_chunk_size = 2000L
+)
 ```
 
-No Unix, chamadas nativas longas do `RcppHNSW` rodam por padrão em um processo
-filho monitorado pelo R, permitindo que `Ctrl + C` encerre também fases
-bloqueantes como a construção do índice HNSW. Para voltar ao caminho direto,
-use:
+Para cálculo exato em matrizes densas de alta dimensionalidade, a configuração
+mais indicada é forçar `FNN` com busca `brute`. Quando os kernels nativos estão
+disponíveis, essa rota usa BLAS para calcular produtos matriciais e mantém
+somente o top-k necessário, sem formar uma matriz completa de distâncias:
 
 ```r
-options(sbyadanear.sby_hnsw_interruptible_fork = FALSE)
+sby_adanear(
+  sby_formula = alvo ~ .,
+  sby_data = dados,
+  sby_knn_engine = "FNN",
+  sby_knn_algorithm = "brute",
+  sby_knn_distance_metric = "euclidean",
+  sby_knn_workers = 1L
+)
 ```
+
+Quando o R estiver ligado ao Intel oneAPI/MKL, `sby_knn_workers = 1L` permite que
+o BLAS use seus próprios threads. Quando `sby_knn_workers > 1L`, o pacote reduz
+threads BLAS por processo para evitar competição excessiva de CPU.
+
+Para HNSW com maior proximidade em relação ao resultado exato, aumente `M` e
+`ef`. A configuração abaixo prioriza fidelidade sobre velocidade e memória:
+
+```r
+sby_adanear(
+  sby_formula = alvo ~ .,
+  sby_data = dados,
+  sby_knn_engine = "RcppHNSW",
+  sby_knn_algorithm = "auto",
+  sby_knn_distance_metric = "euclidean",
+  sby_knn_hnsw_m = 32L,
+  sby_knn_hnsw_ef = 1000L,
+  sby_knn_workers = parallel::detectCores(logical = FALSE)
+)
+```
+
+Em bases muito sensíveis à vizinhança local, valores como `sby_knn_hnsw_m = 48L`
+e `sby_knn_hnsw_ef = 2000L` podem aproximar mais a seleção do resultado exato,
+com maior consumo de memória e tempo de construção do índice.
 
 ## Funções principais
 
