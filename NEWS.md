@@ -44,6 +44,14 @@
   max-heap top-k) e usada por padrao quando `sby_knn_algorithm = "brute"`
   e a lib nativa esta carregada. Pode ser desativada com
   `options(sbyadanear.sby_use_native_brute = FALSE)`.
+* A rota brute force nativa agora possui variantes index-only e dist-only,
+  evitando alocar componentes KNN descartados pelas etapas ADASYN e NearMiss.
+* NearMiss-1 recebeu uma rota exata fundida para `FNN` + `brute`, calculando
+  as medias dos k vizinhos minoritarios via BLAS e selecionando a maioria sem
+  materializar `nn.dist` em R.
+* `sby_knn_query_chunk_size` passou a ser argumento publico nas APIs tabulares,
+  matriciais e de `recipes`, permitindo ajustar o tamanho dos blocos KNN sem
+  depender de opcoes globais.
 * Variante experimental do kernel ADASYN com escrita column-friendly:
   `OU_GenerateSyntheticAdasynColC`, disponivel via
   `options(sbyadanear.sby_adasyn_kernel = "col")`. Em testes empiricos

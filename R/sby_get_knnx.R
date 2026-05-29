@@ -108,11 +108,15 @@ sby_get_knnx <- function(
     }
 
     # Caminho rapido nativo (BLAS): quando o algoritmo selecionado e brute
-    # force exato e o kernel C nativo esta disponivel, usa OU_BruteForceKnnC
-    # que computa o produto cruzado via dgemm (BLAS) e seleciona top-k por
-    # heap. Em alta dimensionalidade isso costuma ser mais rapido que
-    # FNN::get.knnx(algorithm="brute"), especialmente com OpenBLAS/MKL.
+    # force exato e o kernel C nativo esta disponivel, usa rotinas OU_BruteForceKnn*
+    # que computam o produto cruzado via dgemm (BLAS) e selecionam top-k por
+    # heap. As variantes index-only e dist-only evitam alocar componentes que
+    # ADASYN e NearMiss descartariam imediatamente. Em alta dimensionalidade
+    # isso costuma ser mais rapido que FNN::get.knnx(algorithm="brute"),
+    # especialmente com OpenBLAS/MKL.
+    sby_native_brute_option <- getOption("sbyadanear.sby_use_native_brute", TRUE)
     sby_use_native_brute <- identical(sby_knn_algorithm, "brute") &&
+      isTRUE(sby_native_brute_option) &&
       sby_adanear_native_available() &&
       !identical(getOption("sbyadanear.perf_mode", "auto"), "legacy")
 
@@ -126,6 +130,22 @@ sby_get_knnx <- function(
         sby_query_fun = function(sby_query_chunk){
           storage.mode(sby_data) <- "double"
           storage.mode(sby_query_chunk) <- "double"
+          if(identical(sby_knn_return, "index")){
+            return(.Call(
+              OU_BruteForceKnnIndexC,
+              sby_data,
+              sby_query_chunk,
+              as.integer(sby_k)
+            ))
+          }
+          if(identical(sby_knn_return, "dist")){
+            return(.Call(
+              OU_BruteForceKnnDistC,
+              sby_data,
+              sby_query_chunk,
+              as.integer(sby_k)
+            ))
+          }
           return(.Call(
             OU_BruteForceKnnC,
             sby_data,

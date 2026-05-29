@@ -13,7 +13,7 @@ sby_nearmiss_matrix(sby_x_matrix, sby_y_vector, sby_under_ratio = 0.5,
   sby_knn_engine = c("auto", "FNN", "RcppHNSW"),
   sby_knn_distance_metric = c("euclidean", "ip", "cosine"),
   sby_knn_workers = 1L, sby_knn_hnsw_m = 16L,
-  sby_knn_hnsw_ef = 200L, sby_memory_guard = TRUE)
+  sby_knn_hnsw_ef = 200L, sby_knn_query_chunk_size = 1000L, sby_memory_guard = TRUE)
 }
 \arguments{
 \item{sby_x_matrix}{Matrix double densa de preditores.}
@@ -27,7 +27,7 @@ sby_nearmiss_matrix(sby_x_matrix, sby_y_vector, sby_under_ratio = 0.5,
 \item{sby_return_original_scale}{Reverte a saída para escala original.}
 \item{sby_scaling_info, sby_input_already_scaled}{Permitem reutilizar z-score já aplicado.}
 \item{sby_fixed_minority_label, sby_fixed_majority_label}{Papéis de classe fixos usados por ADANEAR.}
-\item{sby_knn_algorithm, sby_knn_engine, sby_knn_distance_metric, sby_knn_workers, sby_knn_hnsw_m, sby_knn_hnsw_ef}{Configuração KNN.}
+\item{sby_knn_algorithm, sby_knn_engine, sby_knn_distance_metric, sby_knn_workers, sby_knn_hnsw_m, sby_knn_hnsw_ef, sby_knn_query_chunk_size}{Configuração KNN.}
 \item{sby_memory_guard}{Ativa proteções de memória.}
 }
 \description{Implementa NearMiss-1, retendo majoritários mais próximos da minoria.}

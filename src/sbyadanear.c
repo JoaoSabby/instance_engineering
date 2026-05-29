@@ -677,6 +677,7 @@ SEXP OU_DropSelfNeighborC(SEXP nbr, SEXP selfIndex, SEXP desiredK){
   return out;
 }
 
+
 /**
  * @brief Top-k brute force KNN para distancia euclidiana usando BLAS.
  *
@@ -686,19 +687,18 @@ SEXP OU_DropSelfNeighborC(SEXP nbr, SEXP selfIndex, SEXP desiredK){
  * consulta, via dgemm para o termo cruzado, e usa um max-heap de tamanho
  * k para extrair os k vizinhos com menor distancia para cada query.
  *
- * Entradas:
- *   data:  matriz double n_ref x p (referencia)
- *   query: matriz double n_query x p (consultas)
- *   k:     escalar integer (numero de vizinhos solicitados)
- *
- * Saidas: list(nn.index = integer matrix n_query x k (1-based),
- *              nn.dist  = double matrix n_query x k (distancia euclidiana))
+ * O auxiliar interno permite retornar somente indices, somente distancias ou
+ * ambos. Essa separacao reduz alocacoes quando ADASYN precisa apenas dos
+ * indices e NearMiss precisa apenas das distancias.
  */
-SEXP OU_BruteForceKnnC(SEXP data, SEXP query, SEXP kSEXP){
+static SEXP brute_force_knn_impl(SEXP data, SEXP query, SEXP kSEXP, int returnIndex, int returnDist){
   require_real_matrix(data, "data");
   require_real_matrix(query, "query");
   if(!isInteger(kSEXP) || LENGTH(kSEXP) != 1){
     error("'k' deve ser integer escalar");
+  }
+  if(!returnIndex && !returnDist){
+    error("Ao menos um componente de KNN deve ser solicitado");
   }
 
   SEXP dDims = getAttrib(data, R_DimSymbol);
@@ -725,64 +725,67 @@ SEXP OU_BruteForceKnnC(SEXP data, SEXP query, SEXP kSEXP){
   const double *Rref = REAL(data);
   const double *Qref = REAL(query);
 
-  /* Normas ao quadrado por linha, pre-calculadas. */
   double *qNorm2 = (double *) R_alloc((size_t) nQuery, sizeof(double));
   double *rNorm2 = (double *) R_alloc((size_t) nRef, sizeof(double));
 
   for(R_xlen_t i = 0; i < nQuery; ++i){
-    long double s = 0.0L;
+    long double sum = 0.0L;
     for(R_xlen_t c = 0; c < p1; ++c){
-      const double v = Qref[i + c * nQuery];
-      s += (long double) v * (long double) v;
+      const double value = Qref[i + c * nQuery];
+      sum += (long double) value * (long double) value;
     }
-    qNorm2[i] = (double) s;
+    qNorm2[i] = (double) sum;
   }
   for(R_xlen_t i = 0; i < nRef; ++i){
-    long double s = 0.0L;
+    long double sum = 0.0L;
     for(R_xlen_t c = 0; c < p1; ++c){
-      const double v = Rref[i + c * nRef];
-      s += (long double) v * (long double) v;
+      const double value = Rref[i + c * nRef];
+      sum += (long double) value * (long double) value;
     }
-    rNorm2[i] = (double) s;
+    rNorm2[i] = (double) sum;
   }
 
-  /* Aloca buffers de saida. */
-  SEXP outIdx = PROTECT(allocMatrix(INTSXP, (int) nQuery, k));
-  SEXP outDst = PROTECT(allocMatrix(REALSXP, (int) nQuery, k));
-  int *idxOut = INTEGER(outIdx);
-  double *dstOut = REAL(outDst);
+  int protectCount = 0;
+  SEXP outIdx = R_NilValue;
+  SEXP outDst = R_NilValue;
+  int *idxOut = NULL;
+  double *dstOut = NULL;
 
-  /* Estrategia em blocos para limitar a memoria do produto cruzado a ~64MB. */
-  const R_xlen_t maxCells = 8 * 1024 * 1024; /* 8M doubles = 64MB */
+  if(returnIndex){
+    outIdx = PROTECT(allocMatrix(INTSXP, (int) nQuery, k));
+    ++protectCount;
+    idxOut = INTEGER(outIdx);
+  }
+  if(returnDist){
+    outDst = PROTECT(allocMatrix(REALSXP, (int) nQuery, k));
+    ++protectCount;
+    dstOut = REAL(outDst);
+  }
+
+  const R_xlen_t maxCells = 8 * 1024 * 1024;
   R_xlen_t blockQ = maxCells / (nRef > 0 ? nRef : 1);
   if(blockQ < 1) blockQ = 1;
   if(blockQ > nQuery) blockQ = nQuery;
   if(blockQ > INT_MAX) blockQ = INT_MAX;
 
   double *cross = (double *) R_alloc((size_t) (blockQ * nRef), sizeof(double));
-  /* Buffers para heap: par (dist, idx). */
   double *heapD = (double *) R_alloc((size_t) k, sizeof(double));
   int *heapI = (int *) R_alloc((size_t) k, sizeof(int));
 
-  /* Itera blocos de queries. */
   for(R_xlen_t qStart = 0; qStart < nQuery; qStart += blockQ){
     R_xlen_t qEnd = qStart + blockQ;
     if(qEnd > nQuery) qEnd = nQuery;
     const R_xlen_t curB = qEnd - qStart;
     R_CheckUserInterrupt();
 
-    /* C = Q[qStart:qEnd, ] %*% t(R) : curB x nRef, em column-major. */
     const double alpha = 1.0;
     const double beta = 0.0;
     const int mInt = (int) curB;
     const int nInt = (int) nRef;
     const int kkInt = (int) p1;
-    const int ldaInt = (int) nQuery;       /* leading dim de Q (toda matrix) */
-    const int ldbInt = (int) nRef;         /* leading dim de R (toda matrix) */
+    const int ldaInt = (int) nQuery;
+    const int ldbInt = (int) nRef;
     const int ldcInt = (int) curB;
-    /* dgemm calcula C[i,j] = sum_c Q[qStart+i, c] * R[j, c]. Como ambas as
-     * matrizes estao em column-major e queremos Q_block @ t(R), usamos
-     * transa='N', transb='T' com Q_block apontando para Qref + qStart. */
     F77_CALL(dgemm)(
       "N", "T",
       &mInt, &nInt, &kkInt,
@@ -793,37 +796,35 @@ SEXP OU_BruteForceKnnC(SEXP data, SEXP query, SEXP kSEXP){
       cross, &ldcInt FCONE FCONE
     );
 
-    /* Para cada query do bloco, monta heap-top-k de menor distancia. */
     for(R_xlen_t bi = 0; bi < curB; ++bi){
       const R_xlen_t qIdx = qStart + bi;
       const double qn2 = qNorm2[qIdx];
       int heapSize = 0;
 
       for(R_xlen_t j = 0; j < nRef; ++j){
-        /* D^2 = ||q||^2 + ||r||^2 - 2 q.r */
         double d2 = qn2 + rNorm2[j] - 2.0 * cross[bi + j * curB];
-        if(d2 < 0.0) d2 = 0.0;  /* clamp para evitar sqrt de negativo por arredondamento */
+        if(d2 < 0.0) d2 = 0.0;
 
         if(heapSize < k){
-          /* Push: insere no fim e sobe (max-heap por d2). */
           int pos = heapSize++;
           heapD[pos] = d2;
-          heapI[pos] = (int) (j + 1);  /* 1-based */
+          heapI[pos] = (int) (j + 1);
           while(pos > 0){
-            int par = (pos - 1) / 2;
-            if(heapD[par] >= heapD[pos]) break;
-            double td = heapD[par]; int ti = heapI[par];
-            heapD[par] = heapD[pos]; heapI[par] = heapI[pos];
+            int parent = (pos - 1) / 2;
+            if(heapD[parent] >= heapD[pos]) break;
+            double td = heapD[parent]; int ti = heapI[parent];
+            heapD[parent] = heapD[pos]; heapI[parent] = heapI[pos];
             heapD[pos] = td; heapI[pos] = ti;
-            pos = par;
+            pos = parent;
           }
         }else if(d2 < heapD[0]){
-          /* Substitui raiz e desce. */
           heapD[0] = d2;
           heapI[0] = (int) (j + 1);
           int pos = 0;
           while(1){
-            int left = 2 * pos + 1, right = left + 1, worst = pos;
+            int left = 2 * pos + 1;
+            int right = left + 1;
+            int worst = pos;
             if(left < heapSize && heapD[left] > heapD[worst]) worst = left;
             if(right < heapSize && heapD[right] > heapD[worst]) worst = right;
             if(worst == pos) break;
@@ -835,21 +836,17 @@ SEXP OU_BruteForceKnnC(SEXP data, SEXP query, SEXP kSEXP){
         }
       }
 
-      /* Ordena o heap por distancia crescente (heap sort por seletor). */
-      /* Estrategia: extrai-min repetidamente trocando com o final. */
-      /* Como o heap atual e max-heap, podemos ordenar in-place produzindo
-       * um array em ordem crescente. */
       int sz = heapSize;
       while(sz > 1){
-        /* Move raiz (maior) para o final. */
         double td = heapD[0]; int ti = heapI[0];
         heapD[0] = heapD[sz - 1]; heapI[0] = heapI[sz - 1];
         heapD[sz - 1] = td; heapI[sz - 1] = ti;
         --sz;
-        /* Restaura heap no prefixo de tamanho sz. */
         int pos = 0;
         while(1){
-          int left = 2 * pos + 1, right = left + 1, worst = pos;
+          int left = 2 * pos + 1;
+          int right = left + 1;
+          int worst = pos;
           if(left < sz && heapD[left] > heapD[worst]) worst = left;
           if(right < sz && heapD[right] > heapD[worst]) worst = right;
           if(worst == pos) break;
@@ -860,25 +857,248 @@ SEXP OU_BruteForceKnnC(SEXP data, SEXP query, SEXP kSEXP){
         }
       }
 
-      /* Escreve resultados na linha qIdx das matrizes de saida (column-major,
-       * leading dim = nQuery). Converte distancia^2 para distancia. */
       for(int kk = 0; kk < heapSize; ++kk){
-        idxOut[qIdx + (R_xlen_t) kk * nQuery] = heapI[kk];
-        dstOut[qIdx + (R_xlen_t) kk * nQuery] = sqrt(heapD[kk]);
+        if(returnIndex){
+          idxOut[qIdx + (R_xlen_t) kk * nQuery] = heapI[kk];
+        }
+        if(returnDist){
+          dstOut[qIdx + (R_xlen_t) kk * nQuery] = sqrt(heapD[kk]);
+        }
       }
     }
   }
 
-  /* Empacota resultado como list(nn.index=..., nn.dist=...) compativel com FNN. */
-  SEXP names = PROTECT(allocVector(STRSXP, 2));
-  SET_STRING_ELT(names, 0, mkChar("nn.index"));
-  SET_STRING_ELT(names, 1, mkChar("nn.dist"));
-  SEXP out = PROTECT(allocVector(VECSXP, 2));
-  SET_VECTOR_ELT(out, 0, outIdx);
-  SET_VECTOR_ELT(out, 1, outDst);
+  const int outLength = returnIndex && returnDist ? 2 : 1;
+  SEXP names = PROTECT(allocVector(STRSXP, outLength));
+  ++protectCount;
+  SEXP out = PROTECT(allocVector(VECSXP, outLength));
+  ++protectCount;
+
+  int pos = 0;
+  if(returnIndex){
+    SET_STRING_ELT(names, pos, mkChar("nn.index"));
+    SET_VECTOR_ELT(out, pos, outIdx);
+    ++pos;
+  }
+  if(returnDist){
+    SET_STRING_ELT(names, pos, mkChar("nn.dist"));
+    SET_VECTOR_ELT(out, pos, outDst);
+  }
   setAttrib(out, R_NamesSymbol, names);
 
-  UNPROTECT(4);
+  UNPROTECT(protectCount);
+  return out;
+}
+
+SEXP OU_BruteForceKnnC(SEXP data, SEXP query, SEXP kSEXP){
+  return brute_force_knn_impl(data, query, kSEXP, 1, 1);
+}
+
+SEXP OU_BruteForceKnnIndexC(SEXP data, SEXP query, SEXP kSEXP){
+  return brute_force_knn_impl(data, query, kSEXP, 1, 0);
+}
+
+SEXP OU_BruteForceKnnDistC(SEXP data, SEXP query, SEXP kSEXP){
+  return brute_force_knn_impl(data, query, kSEXP, 0, 1);
+}
+
+/**
+ * @brief Executa NearMiss-1 exato em rota brute force BLAS sem materializar nn.dist em R.
+ *
+ * Calcula as distancias de cada linha majoritaria ate a matriz minoritaria,
+ * preserva os k vizinhos mais proximos em heap local, acumula a media das
+ * distancias euclidianas e retém os menores escores conforme o criterio
+ * NearMiss-1. Empates sao resolvidos pelo menor indice original, seguindo a
+ * selecao nativa ja usada apos a matriz nn.dist.
+ */
+SEXP OU_NearMissBruteSelectC(SEXP minorityData, SEXP majorityQuery, SEXP majorityIndex, SEXP kSEXP, SEXP retainedMajorityCount){
+  require_real_matrix(minorityData, "minorityData");
+  require_real_matrix(majorityQuery, "majorityQuery");
+  if(!isInteger(majorityIndex)){
+    error("'majorityIndex' deve ser integer");
+  }
+  if(!isInteger(kSEXP) || LENGTH(kSEXP) != 1){
+    error("'k' deve ser integer escalar");
+  }
+  if(!isInteger(retainedMajorityCount) || LENGTH(retainedMajorityCount) != 1){
+    error("'retainedMajorityCount' deve ser integer escalar");
+  }
+
+  SEXP dDims = getAttrib(minorityData, R_DimSymbol);
+  SEXP qDims = getAttrib(majorityQuery, R_DimSymbol);
+  const R_xlen_t nRef = (R_xlen_t) INTEGER(dDims)[0];
+  const R_xlen_t p1 = (R_xlen_t) INTEGER(dDims)[1];
+  const R_xlen_t nQuery = (R_xlen_t) INTEGER(qDims)[0];
+  const R_xlen_t p2 = (R_xlen_t) INTEGER(qDims)[1];
+  const int k = INTEGER(kSEXP)[0];
+  const int retain = INTEGER(retainedMajorityCount)[0];
+
+  if(p1 != p2){
+    error("'minorityData' e 'majorityQuery' devem ter o mesmo numero de colunas");
+  }
+  if(k < 1 || (R_xlen_t) k > nRef){
+    error("'k' deve estar entre 1 e nrow(minorityData)");
+  }
+  if(retain < 1 || (R_xlen_t) retain > nQuery){
+    error("'retainedMajorityCount' deve estar entre 1 e nrow(majorityQuery)");
+  }
+  if(XLENGTH(majorityIndex) != nQuery){
+    error("'majorityIndex' deve ter comprimento igual a nrow(majorityQuery)");
+  }
+  if(nQuery > INT_MAX){
+    error("'majorityQuery' excede o limite suportado por allocVector");
+  }
+
+  const double *Rref = REAL(minorityData);
+  const double *Qref = REAL(majorityQuery);
+  const int *majority = INTEGER(majorityIndex);
+
+  double *qNorm2 = (double *) R_alloc((size_t) nQuery, sizeof(double));
+  double *rNorm2 = (double *) R_alloc((size_t) nRef, sizeof(double));
+  for(R_xlen_t i = 0; i < nQuery; ++i){
+    long double sum = 0.0L;
+    for(R_xlen_t c = 0; c < p1; ++c){
+      const double value = Qref[i + c * nQuery];
+      sum += (long double) value * (long double) value;
+    }
+    qNorm2[i] = (double) sum;
+  }
+  for(R_xlen_t i = 0; i < nRef; ++i){
+    long double sum = 0.0L;
+    for(R_xlen_t c = 0; c < p1; ++c){
+      const double value = Rref[i + c * nRef];
+      sum += (long double) value * (long double) value;
+    }
+    rNorm2[i] = (double) sum;
+  }
+
+  double *retainMean = (double *) R_alloc((size_t) retain, sizeof(double));
+  int *retainIndex = (int *) R_alloc((size_t) retain, sizeof(int));
+  double *heapD = (double *) R_alloc((size_t) k, sizeof(double));
+  int *heapI = (int *) R_alloc((size_t) k, sizeof(int));
+  int retainSize = 0;
+
+  const R_xlen_t maxCells = 8 * 1024 * 1024;
+  R_xlen_t blockQ = maxCells / (nRef > 0 ? nRef : 1);
+  if(blockQ < 1) blockQ = 1;
+  if(blockQ > nQuery) blockQ = nQuery;
+  if(blockQ > INT_MAX) blockQ = INT_MAX;
+  double *cross = (double *) R_alloc((size_t) (blockQ * nRef), sizeof(double));
+
+  #define WORSE_NM(meanA, indexA, meanB, indexB) ((meanA) > (meanB) || ((meanA) == (meanB) && (indexA) > (indexB)))
+  #define BETTER_NM(meanA, indexA, meanB, indexB) ((meanA) < (meanB) || ((meanA) == (meanB) && (indexA) < (indexB)))
+
+  for(R_xlen_t qStart = 0; qStart < nQuery; qStart += blockQ){
+    R_xlen_t qEnd = qStart + blockQ;
+    if(qEnd > nQuery) qEnd = nQuery;
+    const R_xlen_t curB = qEnd - qStart;
+    R_CheckUserInterrupt();
+
+    const double alpha = 1.0;
+    const double beta = 0.0;
+    const int mInt = (int) curB;
+    const int nInt = (int) nRef;
+    const int kkInt = (int) p1;
+    const int ldaInt = (int) nQuery;
+    const int ldbInt = (int) nRef;
+    const int ldcInt = (int) curB;
+    F77_CALL(dgemm)(
+      "N", "T",
+      &mInt, &nInt, &kkInt,
+      &alpha,
+      Qref + qStart, &ldaInt,
+      Rref, &ldbInt,
+      &beta,
+      cross, &ldcInt FCONE FCONE
+    );
+
+    for(R_xlen_t bi = 0; bi < curB; ++bi){
+      const R_xlen_t qIdx = qStart + bi;
+      const double qn2 = qNorm2[qIdx];
+      int heapSize = 0;
+
+      for(R_xlen_t j = 0; j < nRef; ++j){
+        double d2 = qn2 + rNorm2[j] - 2.0 * cross[bi + j * curB];
+        if(d2 < 0.0) d2 = 0.0;
+        if(heapSize < k){
+          int pos = heapSize++;
+          heapD[pos] = d2;
+          heapI[pos] = (int) (j + 1);
+          while(pos > 0){
+            int parent = (pos - 1) / 2;
+            if(heapD[parent] >= heapD[pos]) break;
+            double td = heapD[parent]; int ti = heapI[parent];
+            heapD[parent] = heapD[pos]; heapI[parent] = heapI[pos];
+            heapD[pos] = td; heapI[pos] = ti;
+            pos = parent;
+          }
+        }else if(d2 < heapD[0]){
+          heapD[0] = d2;
+          heapI[0] = (int) (j + 1);
+          int pos = 0;
+          while(1){
+            int left = 2 * pos + 1;
+            int right = left + 1;
+            int worst = pos;
+            if(left < heapSize && heapD[left] > heapD[worst]) worst = left;
+            if(right < heapSize && heapD[right] > heapD[worst]) worst = right;
+            if(worst == pos) break;
+            double td = heapD[worst]; int ti = heapI[worst];
+            heapD[worst] = heapD[pos]; heapI[worst] = heapI[pos];
+            heapD[pos] = td; heapI[pos] = ti;
+            pos = worst;
+          }
+        }
+      }
+
+      long double sumDist = 0.0L;
+      for(int kk = 0; kk < heapSize; ++kk){
+        sumDist += (long double) sqrt(heapD[kk]);
+      }
+      const double mean = (double) (sumDist / (long double) heapSize);
+      const int originalIndex = majority[qIdx];
+
+      if(retainSize < retain){
+        int pos = retainSize++;
+        retainMean[pos] = mean;
+        retainIndex[pos] = originalIndex;
+        while(pos > 0){
+          int parent = (pos - 1) / 2;
+          if(!WORSE_NM(retainMean[pos], retainIndex[pos], retainMean[parent], retainIndex[parent])) break;
+          double tm = retainMean[parent]; int ti = retainIndex[parent];
+          retainMean[parent] = retainMean[pos]; retainIndex[parent] = retainIndex[pos];
+          retainMean[pos] = tm; retainIndex[pos] = ti;
+          pos = parent;
+        }
+      }else if(BETTER_NM(mean, originalIndex, retainMean[0], retainIndex[0])){
+        retainMean[0] = mean;
+        retainIndex[0] = originalIndex;
+        int pos = 0;
+        while(1){
+          int left = 2 * pos + 1;
+          int right = left + 1;
+          int worst = pos;
+          if(left < retainSize && WORSE_NM(retainMean[left], retainIndex[left], retainMean[worst], retainIndex[worst])) worst = left;
+          if(right < retainSize && WORSE_NM(retainMean[right], retainIndex[right], retainMean[worst], retainIndex[worst])) worst = right;
+          if(worst == pos) break;
+          double tm = retainMean[worst]; int ti = retainIndex[worst];
+          retainMean[worst] = retainMean[pos]; retainIndex[worst] = retainIndex[pos];
+          retainMean[pos] = tm; retainIndex[pos] = ti;
+          pos = worst;
+        }
+      }
+    }
+  }
+
+  SEXP out = PROTECT(allocVector(INTSXP, retain));
+  for(int i = 0; i < retain; ++i){
+    INTEGER(out)[i] = retainIndex[i];
+  }
+
+  #undef WORSE_NM
+  #undef BETTER_NM
+
+  UNPROTECT(1);
   return out;
 }
 
@@ -894,6 +1114,9 @@ static const R_CallMethodDef CallEntries[] = {
   {"OU_SelectNearMissMajorityC", (DL_FUNC) &OU_SelectNearMissMajorityC, 3},
   {"OU_DropSelfNeighborC", (DL_FUNC) &OU_DropSelfNeighborC, 3},
   {"OU_BruteForceKnnC", (DL_FUNC) &OU_BruteForceKnnC, 3},
+  {"OU_BruteForceKnnIndexC", (DL_FUNC) &OU_BruteForceKnnIndexC, 3},
+  {"OU_BruteForceKnnDistC", (DL_FUNC) &OU_BruteForceKnnDistC, 3},
+  {"OU_NearMissBruteSelectC", (DL_FUNC) &OU_NearMissBruteSelectC, 5},
   {NULL, NULL, 0}
 };
 

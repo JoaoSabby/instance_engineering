@@ -1,5 +1,7 @@
 #' Aplicar ADANEAR diretamente sobre matrix double e factor binario
 #'
+#' @param sby_knn_query_chunk_size Número inteiro positivo que define quantas linhas de consulta KNN são processadas por bloco. O padrão é `1000L`; ajuste para equilibrar overhead de chamadas e pico de memória.
+#'
 #' @return Lista leve com `sby_x_matrix`, `sby_y_vector`, razoes, distribuicoes e diagnosticos.
 #' @export
 sby_adanear_matrix <- function(
@@ -20,6 +22,7 @@ sby_adanear_matrix <- function(
   sby_knn_workers = 1L,
   sby_knn_hnsw_m = 16L,
   sby_knn_hnsw_ef = 200L,
+  sby_knn_query_chunk_size = 1000L,
   sby_memory_guard = TRUE,
   sby_max_output_rows = Inf,
   sby_max_dense_gb = Inf
@@ -52,6 +55,7 @@ sby_adanear_matrix <- function(
     sby_knn_workers = sby_knn_workers,
     sby_knn_hnsw_m = sby_knn_hnsw_m,
     sby_knn_hnsw_ef = sby_knn_hnsw_ef,
+    sby_knn_query_chunk_size = sby_knn_query_chunk_size,
     sby_memory_guard = sby_memory_guard,
     sby_max_output_rows = sby_max_output_rows,
     sby_max_dense_gb = sby_max_dense_gb
@@ -78,6 +82,7 @@ sby_adanear_matrix <- function(
     sby_knn_workers = sby_knn_workers,
     sby_knn_hnsw_m = sby_knn_hnsw_m,
     sby_knn_hnsw_ef = sby_knn_hnsw_ef,
+    sby_knn_query_chunk_size = sby_knn_query_chunk_size,
     sby_memory_guard = sby_memory_guard
   )
 

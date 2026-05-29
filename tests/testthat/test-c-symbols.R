@@ -81,6 +81,14 @@ test_that("OU_BruteForceKnnC matches FNN::get.knnx(algorithm='brute')", {
 
   expect_equal(r_c$nn.index, r_fnn$nn.index)
   expect_equal(r_c$nn.dist, r_fnn$nn.dist, tolerance = 1e-8)
+
+  r_idx <- .Call(sbyadanear:::OU_BruteForceKnnIndexC, X, Q, 5L)
+  r_dst <- .Call(sbyadanear:::OU_BruteForceKnnDistC, X, Q, 5L)
+
+  expect_equal(r_idx$nn.index, r_fnn$nn.index)
+  expect_null(r_idx$nn.dist)
+  expect_null(r_dst$nn.index)
+  expect_equal(r_dst$nn.dist, r_fnn$nn.dist, tolerance = 1e-8)
 })
 
 test_that("OU_GenerateSyntheticAdasynColC matches OU_GenerateSyntheticAdasynC", {
@@ -134,4 +142,31 @@ test_that("OU_BruteForceKnnC native path is used by sby_get_knnx by default", {
 
   expect_equal(r_native$nn.index, r_fnn$nn.index)
   expect_equal(r_native$nn.dist, r_fnn$nn.dist, tolerance = 1e-8)
+})
+
+test_that("OU_NearMissBruteSelectC matches exact NearMiss distance route", {
+  set.seed(44)
+  minority <- matrix(rnorm(12 * 5), 12, 5)
+  majority <- matrix(rnorm(30 * 5), 30, 5)
+  storage.mode(minority) <- "double"
+  storage.mode(majority) <- "double"
+  majority_index <- as.integer(seq(101L, 130L))
+
+  knn <- .Call(sbyadanear:::OU_BruteForceKnnDistC, minority, majority, 4L)
+  selected_reference <- .Call(
+    sbyadanear:::OU_SelectNearMissMajorityC,
+    knn$nn.dist,
+    majority_index,
+    11L
+  )
+  selected_fused <- .Call(
+    sbyadanear:::OU_NearMissBruteSelectC,
+    minority,
+    majority,
+    majority_index,
+    4L,
+    11L
+  )
+
+  expect_equal(sort(selected_fused), sort(selected_reference))
 })

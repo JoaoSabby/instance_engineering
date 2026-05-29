@@ -12,7 +12,7 @@ sby_adasyn_matrix(sby_x_matrix, sby_y_vector, sby_over_ratio = 0.2,
   sby_knn_engine = c("auto", "FNN", "RcppHNSW"),
   sby_knn_distance_metric = c("euclidean", "ip", "cosine"),
   sby_knn_workers = 1L, sby_knn_hnsw_m = 16L,
-  sby_knn_hnsw_ef = 200L, sby_memory_guard = TRUE,
+  sby_knn_hnsw_ef = 200L, sby_knn_query_chunk_size = 1000L, sby_memory_guard = TRUE,
   sby_max_output_rows = Inf, sby_max_dense_gb = Inf)
 }
 \arguments{
@@ -25,7 +25,7 @@ sby_adasyn_matrix(sby_x_matrix, sby_y_vector, sby_over_ratio = 0.2,
 \item{sby_return_scaled}{Se \code{TRUE}, retorna matriz balanceada em z-score e parâmetros de escala.}
 \item{sby_return_original_scale}{Se \code{TRUE}, retorna \code{sby_x_matrix} na escala original.}
 \item{sby_scaling_info, sby_input_already_scaled}{Parâmetros para reutilizar escala pré-computada.}
-\item{sby_knn_algorithm, sby_knn_engine, sby_knn_distance_metric, sby_knn_workers, sby_knn_hnsw_m, sby_knn_hnsw_ef}{Configuração do KNN exato ou aproximado.}
+\item{sby_knn_algorithm, sby_knn_engine, sby_knn_distance_metric, sby_knn_workers, sby_knn_hnsw_m, sby_knn_hnsw_ef, sby_knn_query_chunk_size}{Configuração do KNN exato ou aproximado.}
 \item{sby_memory_guard, sby_max_output_rows, sby_max_dense_gb}{Controles de segurança para alocação densa.}
 }
 \description{Gera observações sintéticas da classe minoritária por ADASYN usando matriz double densa e busca KNN configurável.}
